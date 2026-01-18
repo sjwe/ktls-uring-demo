@@ -29,7 +29,7 @@ TLS implementations
 cargo run
 ```
 
-## Resources
+## Resources I used
 
 * [tokio-uring Documentation](https://docs.rs/tokio-uring/)
 * [rustls Documentation](https://docs.rs/rustls/)
