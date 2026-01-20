@@ -508,3 +508,48 @@ After removing the allow attribute, `cargo check` showed:
 
 ### Result
 `cargo check` completes with no warnings. Code is cleaner and explicitly handles all WebSocket message types.
+
+---
+
+## Proper SHA-1 Validation for Sec-WebSocket-Accept
+
+### Goal
+Implement RFC 6455 compliant validation of the `Sec-WebSocket-Accept` header using SHA-1.
+
+### RFC 6455 Section 1.3 Requirements
+The server must respond with:
+```
+Sec-WebSocket-Accept = base64(SHA-1(Sec-WebSocket-Key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"))
+```
+
+The client must validate this value to confirm the server understands WebSocket protocol.
+
+### Changes Made
+
+1. **Added `sha1` crate to Cargo.toml**
+
+2. **Added `compute_accept_key()` function in websocket.rs:**
+   ```rust
+   const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+   fn compute_accept_key(sec_key: &str) -> String {
+       let mut hasher = Sha1::new();
+       hasher.update(sec_key.as_bytes());
+       hasher.update(WS_GUID.as_bytes());
+       BASE64.encode(hasher.finalize())
+   }
+   ```
+
+3. **Updated `validate_handshake_response()` signature:**
+   - Now takes `sec_key` parameter
+   - Extracts `Sec-WebSocket-Accept` value from response headers
+   - Computes expected value and compares
+
+4. **Updated main.rs** to pass `sec_key` to validation function
+
+### Why This Matters
+Without proper validation, a malicious or misconfigured server could:
+- Accept the connection without actually supporting WebSocket
+- MITM attack where proxy doesn't understand WebSocket and corrupts frames
+
+The SHA-1 check cryptographically proves the server received and processed our specific key.

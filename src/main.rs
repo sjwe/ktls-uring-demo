@@ -303,7 +303,7 @@ impl WssClient {
         }
 
         let response_str = String::from_utf8_lossy(&response);
-        websocket::validate_handshake_response(&response_str)?;
+        websocket::validate_handshake_response(&response_str, &sec_key)?;
         println!("WebSocket handshake complete");
 
         Ok(stream)

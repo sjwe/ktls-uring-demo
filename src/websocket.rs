@@ -4,6 +4,7 @@
 //! Handles handshake, frame encoding/decoding, and message types.
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64};
+use sha1::{Sha1, Digest};
 
 /// WebSocket opcodes
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +65,17 @@ pub fn generate_sec_key() -> String {
     BASE64.encode(key)
 }
 
+/// WebSocket GUID used in handshake (RFC 6455)
+const WS_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+
+/// Compute expected Sec-WebSocket-Accept value from client key (RFC 6455 Section 1.3)
+fn compute_accept_key(sec_key: &str) -> String {
+    let mut hasher = Sha1::new();
+    hasher.update(sec_key.as_bytes());
+    hasher.update(WS_GUID.as_bytes());
+    BASE64.encode(hasher.finalize())
+}
+
 /// Build WebSocket handshake request
 pub fn build_handshake_request(host: &str, path: &str, sec_key: &str) -> String {
     format!(
@@ -78,8 +90,8 @@ pub fn build_handshake_request(host: &str, path: &str, sec_key: &str) -> String 
     )
 }
 
-/// Validate WebSocket handshake response
-pub fn validate_handshake_response(response: &str) -> Result<(), String> {
+/// Validate WebSocket handshake response (RFC 6455 Section 1.3)
+pub fn validate_handshake_response(response: &str, sec_key: &str) -> Result<(), String> {
     // Check status line
     if !response.starts_with("HTTP/1.1 101") {
         return Err(format!("Expected 101 Switching Protocols, got: {}",
@@ -94,8 +106,26 @@ pub fn validate_handshake_response(response: &str) -> Result<(), String> {
     if !lower.contains("connection: upgrade") {
         return Err("Missing 'Connection: Upgrade' header".into());
     }
-    if !lower.contains("sec-websocket-accept:") {
-        return Err("Missing 'Sec-WebSocket-Accept' header".into());
+
+    // Extract and validate Sec-WebSocket-Accept header
+    let accept_value = response
+        .lines()
+        .find_map(|line| {
+            let lower_line = line.to_lowercase();
+            if lower_line.starts_with("sec-websocket-accept:") {
+                Some(line.split_once(':')?.1.trim())
+            } else {
+                None
+            }
+        })
+        .ok_or("Missing 'Sec-WebSocket-Accept' header")?;
+
+    let expected = compute_accept_key(sec_key);
+    if accept_value != expected {
+        return Err(format!(
+            "Invalid Sec-WebSocket-Accept: expected '{}', got '{}'",
+            expected, accept_value
+        ));
     }
 
     Ok(())
