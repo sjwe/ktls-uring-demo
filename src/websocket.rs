@@ -52,16 +52,7 @@ pub struct FrameHeader {
 /// Generate a random 16-byte key and encode as base64 for Sec-WebSocket-Key
 pub fn generate_sec_key() -> String {
     let mut key = [0u8; 16];
-    // Use simple randomness from system time + memory address
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-
-    for (i, byte) in key.iter_mut().enumerate() {
-        *byte = ((seed >> (i % 16)) ^ (seed >> ((i + 7) % 16))) as u8;
-    }
-
+    getrandom::fill(&mut key).expect("failed to get random bytes");
     BASE64.encode(key)
 }
 
@@ -131,19 +122,11 @@ pub fn validate_handshake_response(response: &str, sec_key: &str) -> Result<(), 
     Ok(())
 }
 
-/// Generate a 4-byte masking key
-pub fn generate_mask_key() -> [u8; 4] {
-    let seed = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-
-    [
-        (seed >> 0) as u8,
-        (seed >> 8) as u8,
-        (seed >> 16) as u8,
-        (seed >> 24) as u8,
-    ]
+/// Generate a 4-byte masking key (RFC 6455 Section 5.3 requires strong entropy)
+fn generate_mask_key() -> [u8; 4] {
+    let mut key = [0u8; 4];
+    getrandom::fill(&mut key).expect("failed to get random bytes");
+    key
 }
 
 /// Encode a WebSocket text frame (client frames must be masked)

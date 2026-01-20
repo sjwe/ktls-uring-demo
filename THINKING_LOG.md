@@ -553,3 +553,36 @@ Without proper validation, a malicious or misconfigured server could:
 - MITM attack where proxy doesn't understand WebSocket and corrupts frames
 
 The SHA-1 check cryptographically proves the server received and processed our specific key.
+
+---
+
+## Proper Random Key Generation
+
+### Goal
+Replace weak timestamp-based randomness with cryptographically secure random bytes.
+
+### Problem
+Both `generate_sec_key()` and `generate_mask_key()` used `SystemTime::now().as_nanos()` as a seed:
+- Timestamps are predictable (can be guessed within milliseconds)
+- Low entropy, especially in lower bytes
+- RFC 6455 Section 5.3 requires masking keys from "a strong source of entropy"
+
+### Solution
+Added `getrandom` crate which uses OS-level randomness (`/dev/urandom` on Linux):
+
+```rust
+pub fn generate_sec_key() -> String {
+    let mut key = [0u8; 16];
+    getrandom::fill(&mut key).expect("failed to get random bytes");
+    BASE64.encode(key)
+}
+
+fn generate_mask_key() -> [u8; 4] {
+    let mut key = [0u8; 4];
+    getrandom::fill(&mut key).expect("failed to get random bytes");
+    key
+}
+```
+
+### Why Masking Key Randomness Matters
+The masking key prevents cache poisoning attacks where a malicious client could craft frames that, when XOR'd with a predictable mask, produce bytes that confuse intermediary proxies. Unpredictable masks ensure proxies can't be tricked into misinterpreting WebSocket traffic as HTTP.
